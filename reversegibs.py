@@ -56,7 +56,8 @@ FUND_DICT = {
     'f': 'float',
     'd': 'double',
     'r': 'long double',
-    'v': 'void'
+    'v': 'void',
+    'e': '...'
 }
 
 SIGN_DICT = {
@@ -70,6 +71,10 @@ def demangle_type(mangled_info):
     if mangled_info[0] in REF_DICT:
         type['type'] = REF_DICT[mangled_info[0]]
         del mangled_info[:1:]
+        if type['type'] == 'pointer-to-member':
+            type['qualified-name'] = demangle_name_quals(mangled_info)
+            if mangled_info[0] == 'F':
+                del mangled_info[1:len('FPCvPv'):]
         type['reference'] = demangle_type(mangled_info)
     elif mangled_info[0] == 'A':
         type['type'] = 'array'
@@ -139,14 +144,17 @@ def get_mangled_dictionary(mangled_name):
 def demangle_obj_dict(obj_dict, prev_str, is_referred, cur_str):
     qual_mask = obj_dict['type-qualifiers']
     qual_str = QUAL_DICT[qual_mask] + ' ' if qual_mask in QUAL_DICT else str()
-    return qual_str + cur_str + prev_str
+    
+    return qual_str + cur_str + (' ' + prev_str if prev_str else '')
 
 
 # used by pointers and references
-def demangle_alias_dict(alias_dict, prev_str, is_referred, alias_char):
+def demangle_alias_dict(alias_dict, prev_str, is_referred, alias_op):
     qual_mask = alias_dict['type-qualifiers']
     qual_str = ' ' + QUAL_DICT[qual_mask] if qual_mask in QUAL_DICT else str()
-    alias_str = alias_char + qual_str + prev_str
+    if is_referred and qual_str:
+        qual_str += ' '
+    alias_str = alias_op + qual_str + prev_str
     return demangle_type_dict(alias_dict['reference'], alias_str, True)
 
 
@@ -165,6 +173,12 @@ def demangle_fund_dict(fund_dict, prev_str, is_referred):
 # used by pointers
 def demangle_ptr_dict(ptr_dict, prev_str, is_referred):
     return demangle_alias_dict(ptr_dict, prev_str, is_referred, '*')
+
+
+# used by pointers to members
+def demangle_member_dict(member_dict, prev_str, is_referred):
+    member_op = demangle_qual_dict(member_dict) + '::*'
+    return demangle_alias_dict(member_dict, prev_str, is_referred, member_op)
 
 
 # used by references
@@ -192,7 +206,8 @@ DEMANGLE_FUNC_DICT = {
     'reference': demangle_ref_dict,
     'class': demangle_class_dict,
     'array': demangle_arr_dict,
-    'function': demangle_func_dict
+    'function': demangle_func_dict,
+    'pointer-to-member': demangle_member_dict
 }
 
 
