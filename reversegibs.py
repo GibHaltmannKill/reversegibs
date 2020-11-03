@@ -24,13 +24,19 @@ def get_qual_name(namespace_count, mangled_info):
 CONST_MASK = 1
 VOLATILE_MASK = 2
 
+QUAL_DICT = {
+    CONST_MASK: 'const',
+    VOLATILE_MASK: 'volatile',
+    CONST_MASK | VOLATILE_MASK: 'const volatile',
+}
+
 def demangle_type_quals(mangled_info):
-    mask = str()
+    mask = 0
     if mangled_info[0] == 'C':
-        mask += 'const '
+        mask |= CONST_MASK
         del mangled_info[:1:]
     if mangled_info[0] == 'V':
-        mask += 'volatile '
+        mask |= VOLATILE_MASK
         del mangled_info[:1:]
     return mask
 
@@ -129,27 +135,56 @@ def get_mangled_dictionary(mangled_name):
     return mangled_dictionary
 
 
-def demangle_obj_dict(obj_dict, prev_str, is_referred):
-    return obj_dict['type-qualifiers'] + demangle_qual_dict(obj_dict) + prev_str
+# used by fundamental types, structures, classes, enumerables and unions
+def demangle_obj_dict(obj_dict, prev_str, is_referred, cur_str):
+    qual_mask = obj_dict['type-qualifiers']
+    qual_str = QUAL_DICT[qual_mask] + ' ' if qual_mask in QUAL_DICT else str()
+    return qual_str + cur_str + prev_str
+
+# used by pointers and references
+def demangle_alias_dict(alias_dict, prev_str, is_referred, alias_char):
+    qual_mask = alias_dict['type-qualifiers']
+    qual_str = ' ' + QUAL_DICT[qual_mask] if qual_mask in QUAL_DICT else str()
+    alias_str = alias_char + qual_str + prev_str
+    
+    return demangle_type_dict(alias_dict['reference'], alias_str, True)
 
 
+# used by structures, classes, enumerables and unions
+def demangle_class_dict(class_dict, prev_str, is_referred):
+    cur_str = demangle_qual_dict(class_dict)
+    return demangle_obj_dict(class_dict, prev_str, is_referred, cur_str)
+
+
+# used by fundamental types
 def demangle_fund_dict(fund_dict, prev_str, is_referred):
-    return fund_dict['type-qualifiers'] + fund_dict['fundamental'] + prev_str
+    cur_str = fund_dict['fundamental']
+    return demangle_obj_dict(fund_dict, prev_str, is_referred, cur_str)
 
 
+# used by pointers
 def demangle_ptr_dict(ptr_dict, prev_str, is_referred):
-    return demangle_type_dict(ptr_dict['reference'], '*' + ptr_dict['type-qualifiers'] + prev_str, True)
+    return demangle_alias_dict(ptr_dict, prev_str, is_referred, '*')
 
 
+# used by references
 def demangle_ref_dict(ref_dict, prev_str, is_referred):
-    return demangle_type_dict(ref_dict['reference'], '&' + ref_dict['type-qualifiers'] + prev_str, True)
+    return demangle_alias_dict(ref_dict, prev_str, is_referred, '&')
+
+
+# used by arrays
+def demangle_arr_dict(arr_dict, prev_str, is_referred):
+    arr_format = '(%s)[%d]' if is_referred else '%s[%d]'
+    arr_str = arr_format % (prev_str, arr_dict['length'])
+    return demangle_type_dict(arr_dict['element'], arr_str, False)
 
 
 DEMANGLE_FUNC_DICT = {
     'fundamental': demangle_fund_dict,
     'pointer': demangle_ptr_dict,
     'reference': demangle_ref_dict,
-    'class': demangle_obj_dict
+    'class': demangle_class_dict,
+    'array': demangle_arr_dict
 }
 
 
